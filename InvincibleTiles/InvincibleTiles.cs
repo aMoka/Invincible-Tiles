@@ -14,8 +14,10 @@ namespace InvincibleTiles
     [ApiVersion(1,16)]
     public class InvincibleTiles : TerrariaPlugin
     {
-        private List<int> blacklistedTiles = new List<int>();
-        private List<int> blacklistedWalls = new List<int>();
+        //private List<int> blacklistedTiles = new List<int>();
+        //private List<int> blacklistedWalls = new List<int>();
+        private Dictionary<int, String> blacklistedTiles = new Dictionary<int, string>();
+        private Dictionary<int, String> blacklistedWalls = new Dictionary<int, string>();
         private IDbConnection db;
 
         public override Version Version
@@ -95,7 +97,8 @@ namespace InvincibleTiles
             
             var table2 = new SqlTable("BlacklistedTiles",
                                      new SqlColumn("ID", MySqlDbType.Int32),
-                                     new SqlColumn("Type", MySqlDbType.Int32){ DefaultValue = "0"}
+                                     new SqlColumn("Type", MySqlDbType.Int32){ DefaultValue = "0"},
+                                     new SqlColumn("Region", MySqlDbType.String)
                 );
             var creator2 = new SqlTableCreator(db,
                                               db.GetSqlType() == SqlType.Sqlite
@@ -114,13 +117,14 @@ namespace InvincibleTiles
 			{
 			    int id = reader.Get<int>("ID");
 			    int type = reader.Get<int>("Type");
+                string region = reader.Get<string>("Region");
 			    if (type == 0)
 			    {
-			        blacklistedTiles.Add(id);
+			        blacklistedTiles.Add(id, region);
 			    }
 			    else
 			    {
-			        blacklistedWalls.Add(id);
+			        blacklistedWalls.Add(id, region);
 			    }
             }
         }
@@ -144,23 +148,32 @@ namespace InvincibleTiles
             }
             string tile = args.Parameters[0];
             int id;
+            string region = "";
+            if (args.Parameters.Count > 1)
+            {
+                region = args.Parameters[1];
+            }
+
             if( !int.TryParse(tile, out id) )
             {
                 args.Player.SendMessage(String.Format("Tile id '{0}' is not a valid number.", id), Color.Red);
                 return;
             }
 
-            String query = "INSERT INTO BlacklistedTiles (ID, Type) VALUES (@0,@1);";
+            String query = "INSERT INTO BlacklistedTiles (ID, Type, Region) VALUES (@0,@1,@2);";
 
-            if(db.Query(query, id,0) != 1)
+            if(db.Query(query, id,0, region) != 1)
             {
                 Log.ConsoleError("Inserting into the database has failed!");
                 args.Player.SendMessage(String.Format("Inserting into the database has failed!", id), Color.Red);
             }
             else
             {
+                if (!region.Equals(""))
+                    args.Player.SendMessage(String.Format("Successfully banned {0} in region {1}", id, region), Color.Red);
+                else
                 args.Player.SendMessage(String.Format("Successfully banned {0}",id), Color.Red);
-                blacklistedTiles.Add(id);
+                blacklistedTiles.Add(id, region);
             }
         }
 
@@ -173,14 +186,20 @@ namespace InvincibleTiles
             }
             string tile = args.Parameters[0];
             int id;
+            string region = "";
+            if (args.Parameters.Count > 1)
+            {
+                region = args.Parameters[1];
+            }
+
             if (!int.TryParse(tile, out id))
             {
                 args.Player.SendMessage(String.Format("Tile id '{0}' is not a valid number.", id), Color.Red);
                 return;
             }
-            String query = "DELETE FROM BlacklistedTiles WHERE ID = @0 AND Type = @1;";
+            String query = "DELETE FROM BlacklistedTiles WHERE ID = @0 AND Type = @1 AND Region = @2;";
 
-            if (db.Query(query, id, 0) != 1)
+            if (db.Query(query, id, 0, region) != 1)
             {
                 Log.ConsoleError("Removing from the database has failed!");
                 args.Player.SendMessage(String.Format("Removing from the database has failed!  Are you sure {0} is banned?", id), Color.Red);
@@ -201,23 +220,32 @@ namespace InvincibleTiles
             }
             string tile = args.Parameters[0];
             int id;
+            string region = "";
+            if (args.Parameters.Count > 1)
+            {
+                region = args.Parameters[1];
+            }
+
             if (!int.TryParse(tile, out id))
             {
                 args.Player.SendMessage(String.Format("Wall id '{0}' is not a valid number.", id), Color.Red);
                 return;
             }
 
-            String query = "INSERT INTO BlacklistedTiles (ID, Type) VALUES (@0, @1);";
+            String query = "INSERT INTO BlacklistedTiles (ID, Type, Region) VALUES (@0, @1, @2);";
 
-            if (db.Query(query, id, 1) != 1)
+            if (db.Query(query, id, 1, region) != 1)
             {
                 Log.ConsoleError("Inserting into the database has failed!");
                 args.Player.SendMessage(String.Format("Inserting into the database has failed!", id), Color.Red);
             }
             else
             {
-                args.Player.SendMessage(String.Format("Successfully banned {0}", id), Color.Red);
-                blacklistedWalls.Add(id);
+                if (!region.Equals(""))
+                    args.Player.SendMessage(String.Format("Successfully banned {0} in region {1}", id, region), Color.Red);
+                else
+                    args.Player.SendMessage(String.Format("Successfully banned {0}", id), Color.Red);
+                blacklistedWalls.Add(id, region);
             }
         }
 
@@ -230,14 +258,20 @@ namespace InvincibleTiles
             }
             string tile = args.Parameters[0];
             int id;
+            string region = "";
+            if (args.Parameters.Count > 1)
+            {
+                region = args.Parameters[1];
+            }
+
             if (!int.TryParse(tile, out id))
             {
                 args.Player.SendMessage(String.Format("Wall id '{0}' is not a valid number.", id), Color.Red);
                 return;
             }
-            String query = "DELETE FROM BlacklistedTiles WHERE ID = @0 AND Type = @1;";
+            String query = "DELETE FROM BlacklistedTiles WHERE ID = @0 AND Type = @1 AND Region = @2;";
 
-            if (db.Query(query, id, 1) != 1)
+            if (db.Query(query, id, 1, region) != 1)
             {
                 Log.ConsoleError("Removing from the database has failed!");
                 args.Player.SendMessage(String.Format("Removing from the database has failed!  Are you sure {0} is banned?", id), Color.Red);
@@ -254,15 +288,41 @@ namespace InvincibleTiles
             if (args.Player.Group.HasPermission("breakinvincible"))
                 return;
 
-            if (args.Action == GetDataHandlers.EditAction.KillWall && blacklistedWalls.Contains(Main.tile[args.X, args.Y].wall))
+            
+
+            if (args.Action == GetDataHandlers.EditAction.KillWall && blacklistedWalls.ContainsKey(Main.tile[args.X, args.Y].wall))
             {
-                args.Handled = true;
-                TSPlayer.All.SendTileSquare(args.X, args.Y, 1);
+                if (!blacklistedWalls[Main.tile[args.X, args.Y].wall].Equals("")) //if there's a region
+                {
+                    Region region = TShock.Regions.GetRegionByName(blacklistedWalls[Main.tile[args.X, args.Y].wall]);
+                    if (region.Area.Contains(args.X, args.Y))
+                    {
+                        args.Handled = true;
+                        TSPlayer.All.SendTileSquare(args.X, args.Y, 1);
+                    }
+                }
+                else
+                {
+                    args.Handled = true;
+                    TSPlayer.All.SendTileSquare(args.X, args.Y, 1);
+                }
             }
-			else if ((args.Action == GetDataHandlers.EditAction.KillTile || args.Action == GetDataHandlers.EditAction.KillTileNoItem || args.Action == GetDataHandlers.EditAction.PoundTile) && blacklistedTiles.Contains(Main.tile[args.X, args.Y].type))
+			else if ((args.Action == GetDataHandlers.EditAction.KillTile || args.Action == GetDataHandlers.EditAction.KillTileNoItem || args.Action == GetDataHandlers.EditAction.PoundTile) && blacklistedTiles.ContainsKey(Main.tile[args.X, args.Y].type))
             {
-                args.Handled = true;
-                TSPlayer.All.SendTileSquare(args.X,args.Y, 1);
+                if (!blacklistedTiles[Main.tile[args.X, args.Y].type].Equals(""))
+                {
+                    Region region = TShock.Regions.GetRegionByName(blacklistedTiles[Main.tile[args.X, args.Y].type]);
+                    if (region.Area.Contains(args.X, args.Y))
+                    {
+                        args.Handled = true;
+                        TSPlayer.All.SendTileSquare(args.X, args.Y, 1);
+                    }
+                }
+                else
+                {
+                    args.Handled = true;
+                    TSPlayer.All.SendTileSquare(args.X, args.Y, 1);
+                }
             }
         }
     }
